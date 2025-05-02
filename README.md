@@ -4,6 +4,12 @@ Test a recursive DNS validator endpoint to see if it supports DNSSEC per the ten
 ## Useage
 `./test-resolver.sh <IP Address of DNS Resolver Being Tested>`
 
+OR
+
+`./test-resolver.sh`
+
+If no resolver IP address is specified, the system default DNS resolver is used.
+
 The script will echo `ALL TESTS PASSED` with a 0 exit code if successful.
 
 A non-zero exit code or any test marked "FAILED" indicates a failure.
