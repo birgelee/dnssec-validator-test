@@ -1,7 +1,7 @@
 # dnssec-validator-test
-Test a recursive DNS validator endpoint to see if it supports DNSSEC per the tentative requirements in ballot SC-085.
+Test a recursive DNS validator endpoint to see if it supports DNSSEC per a subset of the requirements in ballot SC085v2.
 
-## Useage
+## Usage
 `./test-resolver.sh <IP Address of DNS Resolver Being Tested>`
 
 OR
