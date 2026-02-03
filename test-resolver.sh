@@ -56,20 +56,77 @@ else
     exit 1
 fi
 
-echo "------Test support for digest type 2 (SHA-2) RFC 4509, RRSIG type 8 (SHA-2 over RSA) RFC 5702, and optional RRSIG type 13."
-CLOUDFLARE_CAA_RESULT="$(dig $DNSSEC_RESOLVER cloudflare.com IN CAA \
+echo "------Test support for digest type 2 (SHA-2) RFC 4509 and RRSIG type 8 (SHA-2 over RSA) RFC 5702."
+ORG_DS_RESULT="$(dig $DNSSEC_RESOLVER org IN DS \
 )"
-if echo $CLOUDFLARE_CAA_RESULT | grep -q "status: NOERROR" && echo $CLOUDFLARE_CAA_RESULT | grep -q "flags:[a-z ]*ad" ; then
+if ! ( echo "$ORG_DS_RESULT" | grep -q "status: NOERROR" && \
+   echo "$ORG_DS_RESULT" | grep -q "flags:[a-z ]*ad" && \
+   # Expect exactly one DS RR to simplify verification.
+   [ $(echo "$ORG_DS_RESULT" | grep -c $'IN\tDS\t[0-9]\+') -eq 1 ] )
+then
+    echo "org test FAILED"
+    exit 1
+fi
+# Capturing the key tag of the only DS RR with SHA-256 (2) DigestType.
+re=$'IN\tDS\t([0-9]+) [0-9]+ 2'
+if ! [[ $ORG_DS_RESULT =~ $re ]]; then
+    echo "org test FAILED"
+    exit 1
+fi
+ORG_DS_KEY_TAG="${BASH_REMATCH[1]}"
+# Confirm the previous DS RR is actually understood by our resolver by checking support for its DNSKEY.
+ORG_DNSKEY_RESULT=$(dig $DNSSEC_RESOLVER org IN DNSKEY \
++dnssec
+)
+if ! ( echo "$ORG_DNSKEY_RESULT" | grep -q "status: NOERROR" && \
+   echo "$ORG_DNSKEY_RESULT" | grep -q "flags:[a-z ]*ad" && \
+   [ $(echo "$ORG_DNSKEY_RESULT" | grep -c $'IN\tRRSIG\tDNSKEY') -eq 1 ] )
+then
+    echo "org test FAILED"
+    exit 1
+fi
+# Capturing the key tag of the only RRSIG RR with RSA/SHA-256 (8) Algorithm Number.
+re=$'IN\tRRSIG\tDNSKEY 8 1 [0-9]+ [0-9]+ [0-9]+ ([0-9]+)'
+if ! [[ $ORG_DNSKEY_RESULT =~ $re ]]; then
+    echo "org test FAILED"
+    exit 1
+fi
+ORG_DNSKEY_KEY_TAG="${BASH_REMATCH[1]}"
+if [ "$ORG_DNSKEY_KEY_TAG" != "$ORG_DS_KEY_TAG" ]; then
+    echo "org test FAILED"
+    exit 1
+else
+    echo "org test PASSED"
+fi
+
+echo "------Test support for optional RRSIG type 13 RFC 6605."
+CLOUDFLARE_CAA_RESULT="$(dig $DNSSEC_RESOLVER cloudflare.com IN CAA \
++dnssec
+)"
+if echo $CLOUDFLARE_CAA_RESULT | grep -q "status: NOERROR" && \
+   echo $CLOUDFLARE_CAA_RESULT | grep -q "flags:[a-z ]*ad" && \
+   # Ensure there is a single RRSIG to be sure of having verified the right thing.
+   [ $(echo "$CLOUDFLARE_CAA_RESULT" | grep -c $'IN\tRRSIG\tCAA') -eq 1 ] && \
+   # Expect ECDSA Curve P-256 with SHA-256 (13) Algorithm Number.
+   echo "$CLOUDFLARE_CAA_RESULT" | grep -q $'IN\tRRSIG\tCAA 13';
+then
     echo "cloudflare.com test PASSED"
 else
     echo "cloudflare.com test FAILED"
     exit 1
 fi
 
-echo "------Test support for NSEC RFC 4035 Section 5."
+echo "------Test support for NSEC RFC 4035 Section 5.4."
 CLOUDFLARE_NXSUBDOMAIN_RESULT="$(dig $DNSSEC_RESOLVER a-subdomain-that-does-not-exist.cloudflare.com IN A \
++dnssec
 )"
-if echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "status: NOERROR" && echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "ANSWER: 0" && echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "flags:[a-z ]*ad" ; then
+if echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "status: NOERROR" && \
+   echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "flags:[a-z ]*ad" && \
+   echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "ANSWER: 0" && \
+   # Expecting no NSEC3 to ensure the resolver verified the right thing.
+   ! (echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "IN NSEC3 ") && \
+   echo $CLOUDFLARE_NXSUBDOMAIN_RESULT | grep -q "IN NSEC "
+then
     echo "a-subdomain-that-does-not-exist.cloudflare.com test PASSED"
 else
     echo "a-subdomain-that-does-not-exist.cloudflare.com test FAILED"
@@ -78,8 +135,14 @@ fi
 
 echo "------Test support for NSEC3 RFC 5155."
 CN_RESULT="$(dig $DNSSEC_RESOLVER cn IN A \
++dnssec
 )"
-if echo $CN_RESULT | grep -q "status: NOERROR" && echo $CN_RESULT | grep -q "ANSWER: 0" && echo $CN_RESULT | grep -q "flags:[a-z ]*ad" ; then
+if echo $CN_RESULT | grep -q "status: NOERROR" && \
+   echo $CN_RESULT | grep -q "flags:[a-z ]*ad" && \
+   echo $CN_RESULT | grep -q "ANSWER: 0" && \
+   ! (echo $CN_RESULT | grep -q "IN NSEC ") && \
+   echo $CN_RESULT | grep -q "IN NSEC3 "
+then
     echo "cn test PASSED"
 else
     echo "cn test FAILED"
